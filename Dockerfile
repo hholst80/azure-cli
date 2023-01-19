@@ -5,7 +5,58 @@
 
 ARG PYTHON_VERSION="3.10"
 
-FROM python:${PYTHON_VERSION}-alpine
+#---------------------------------------------------------------------------------------------
+
+FROM python:${PYTHON_VERSION}-alpine AS common
+
+# bash gcc make openssl-dev libffi-dev musl-dev - dependencies required for CLI
+# openssh - included for ssh-keygen
+# ca-certificates
+
+# curl - required for installing jp, and also a useful tool
+# jq - we include jq as a useful tool
+# libintl and icu-libs - required by azure devops artifact (az extension add --name azure-devops)
+
+# We don't use openssl (3.0) for now. We only install it so that users can use it.
+# Once cryptography is bumped to the latest version, openssl1.1-compat should be removed and openssl1.1-compat-dev
+# should be replaced by openssl-dev.
+
+RUN apk add --no-cache \
+    bash openssh ca-certificates jq curl openssl openssl1.1-compat perl git zip \
+    libintl icu-libs libc6-compat \
+    bash-completion \
+ && update-ca-certificates
+
+#---------------------------------------------------------------------------------------------
+
+FROM common AS tools
+
+ARG JP_VERSION="0.1.3"
+
+RUN curl -L https://github.com/jmespath/jp/releases/download/${JP_VERSION}/jp-linux-amd64 -o /usr/local/bin/jp \
+ && chmod +x /usr/local/bin/jp
+
+#---------------------------------------------------------------------------------------------
+
+FROM common AS builder
+
+# bash gcc make openssl-dev libffi-dev musl-dev - dependencies required for CLI
+
+RUN apk add --no-cache --virtual .build-deps gcc make openssl1.1-compat-dev libffi-dev musl-dev linux-headers
+
+WORKDIR azure-cli
+COPY . /azure-cli
+
+# 1. Build packages and store in tmp dir
+# 2. Install the cli and the other command modules that weren't included
+RUN ./scripts/install_full.sh
+
+# Remove CLI source code from the final image and normalize line endings.
+RUN dos2unix az.completion /usr/local/bin/az
+
+#---------------------------------------------------------------------------------------------
+
+FROM common
 
 ARG CLI_VERSION
 
@@ -25,38 +76,11 @@ LABEL maintainer="Microsoft" \
       org.label-schema.vcs-url="https://github.com/Azure/azure-cli.git" \
       org.label-schema.docker.cmd="docker run -v \${HOME}/.azure:/root/.azure -it mcr.microsoft.com/azure-cli:$CLI_VERSION"
 
-# bash gcc make openssl-dev libffi-dev musl-dev - dependencies required for CLI
-# openssh - included for ssh-keygen
-# ca-certificates
+COPY --from=builder /azure-cli/az.completion /root/.bashrc
+COPY --from=builder /usr/local /usr/local
+COPY --from=tools /usr/local/bin/jp /usr/local/bin/
 
-# curl - required for installing jp
-# jq - we include jq as a useful tool
-# pip wheel - required for CLI packaging
-# jmespath-terminal - we include jpterm as a useful tool
-# libintl and icu-libs - required by azure devops artifact (az extension add --name azure-devops)
-
-# We don't use openssl (3.0) for now. We only install it so that users can use it.
-# Once cryptography is bumped to the latest version, openssl1.1-compat should be removed and openssl1.1-compat-dev
-# should be replaced by openssl-dev.
-RUN apk add --no-cache bash openssh ca-certificates jq curl openssl openssl1.1-compat perl git zip \
- && apk add --no-cache --virtual .build-deps gcc make openssl1.1-compat-dev libffi-dev musl-dev linux-headers \
- && apk add --no-cache libintl icu-libs libc6-compat \
- && apk add --no-cache bash-completion \
- && update-ca-certificates
-
-ARG JP_VERSION="0.1.3"
-
-RUN curl -L https://github.com/jmespath/jp/releases/download/${JP_VERSION}/jp-linux-amd64 -o /usr/local/bin/jp \
- && chmod +x /usr/local/bin/jp
-
-WORKDIR azure-cli
-COPY . /azure-cli
-
-# 1. Build packages and store in tmp dir
-# 2. Install the cli and the other command modules that weren't included
-RUN ./scripts/install_full.sh \
- && cat /azure-cli/az.completion > ~/.bashrc \
- && runDeps="$( \
+RUN runDeps="$( \
     scanelf --needed --nobanner --recursive /usr/local \
         | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
         | sort -u \
@@ -64,12 +88,6 @@ RUN ./scripts/install_full.sh \
         | sort -u \
     )" \
  && apk add --virtual .rundeps $runDeps
-
-WORKDIR /
-
-# Remove CLI source code from the final image and normalize line endings.
-RUN rm -rf ./azure-cli && \
-    dos2unix /root/.bashrc /usr/local/bin/az
 
 ENV AZ_INSTALLER=DOCKER
 CMD bash
