@@ -52,7 +52,7 @@ COPY . /azure-cli
 RUN ./scripts/install_full.sh
 
 # Remove CLI source code from the final image and normalize line endings.
-RUN dos2unix az.completion /usr/local/bin/az
+RUN dos2unix /usr/local/bin/az /usr/local/bin/az.completion.sh
 
 #---------------------------------------------------------------------------------------------
 
@@ -76,9 +76,8 @@ LABEL maintainer="Microsoft" \
       org.label-schema.vcs-url="https://github.com/Azure/azure-cli.git" \
       org.label-schema.docker.cmd="docker run -v \${HOME}/.azure:/root/.azure -it mcr.microsoft.com/azure-cli:$CLI_VERSION"
 
-COPY --from=builder /azure-cli/az.completion /root/.bashrc
 COPY --from=builder /usr/local /usr/local
-COPY --from=tools /usr/local/bin/jp /usr/local/bin/
+COPY --from=tools   /usr/local /usr/local
 
 RUN runDeps="$( \
     scanelf --needed --nobanner --recursive /usr/local \
@@ -87,7 +86,8 @@ RUN runDeps="$( \
         | xargs -r apk info --installed \
         | sort -u \
     )" \
- && apk add --virtual .rundeps $runDeps
+ && apk add --virtual .rundeps $runDeps \
+ && ln -s /usr/local/bin/az.completion.sh /etc/profile.d/
 
 ENV AZ_INSTALLER=DOCKER
 CMD bash
