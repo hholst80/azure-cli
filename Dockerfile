@@ -54,6 +54,9 @@ RUN ./scripts/install_full.sh
 # Remove CLI source code from the final image and normalize line endings.
 RUN dos2unix /usr/local/bin/az /usr/local/bin/az.completion.sh
 
+# Remove __pycache__
+RUN find /usr/local -name __pycache__ | xargs rm -rf
+
 #---------------------------------------------------------------------------------------------
 
 FROM common
