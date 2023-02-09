@@ -18,11 +18,8 @@ FROM python:${PYTHON_VERSION}-alpine AS common
 # libintl and icu-libs - required by azure devops artifact (az extension add --name azure-devops)
 
 # We don't use openssl (3.0) for now. We only install it so that users can use it.
-# Once cryptography is bumped to the latest version, openssl1.1-compat should be removed and openssl1.1-compat-dev
-# should be replaced by openssl-dev.
-
 RUN apk add --no-cache \
-    bash openssh ca-certificates jq curl openssl openssl1.1-compat perl git zip \
+    bash openssh ca-certificates jq curl openssl perl git zip \
     libintl icu-libs libc6-compat \
     bash-completion \
  && update-ca-certificates
@@ -42,7 +39,7 @@ FROM common AS builder
 
 # bash gcc make openssl-dev libffi-dev musl-dev - dependencies required for CLI
 
-RUN apk add --no-cache --virtual .build-deps gcc make openssl1.1-compat-dev libffi-dev musl-dev linux-headers
+RUN apk add --no-cache --virtual .build-deps gcc make openssl-dev libffi-dev musl-dev linux-headers
 
 WORKDIR azure-cli
 COPY . /azure-cli
