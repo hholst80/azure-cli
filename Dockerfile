@@ -35,7 +35,7 @@ RUN curl -L https://github.com/jmespath/jp/releases/download/${JP_VERSION}/jp-li
 
 #---------------------------------------------------------------------------------------------
 
-FROM common AS builder
+FROM common AS build
 
 # bash gcc make openssl-dev libffi-dev musl-dev - dependencies required for CLI
 
@@ -44,15 +44,15 @@ RUN apk add --no-cache --virtual .build-deps gcc make openssl-dev libffi-dev mus
 WORKDIR azure-cli
 COPY . /azure-cli
 
-# 1. Build packages and store in tmp dir
-# 2. Install the cli and the other command modules that weren't included
-RUN ./scripts/install_full.sh
-
 # Remove CLI source code from the final image and normalize line endings.
-RUN dos2unix /usr/local/bin/az /usr/local/bin/az.completion.sh
+RUN dos2unix ./src/azure-cli/az ./src/azure-cli/az.completion.sh
 
-# Remove __pycache__
-RUN find /usr/local -name __pycache__ | xargs rm -rf
+# Inlined wheel build of ./scripts/install_full.sh
+RUN find src/ -name setup.py -type f \
+    | xargs -I {} dirname {} \
+    | grep -v azure-cli-testsdk \
+    | xargs pip wheel --no-deps --wheel-dir=/whl \
+ && pip wheel --wheel-dir=/whl -r ./src/azure-cli/requirements.$(python ./scripts/get-python-version.py).$(uname).txt
 
 #---------------------------------------------------------------------------------------------
 
@@ -76,8 +76,11 @@ LABEL maintainer="Microsoft" \
       org.label-schema.vcs-url="https://github.com/Azure/azure-cli.git" \
       org.label-schema.docker.cmd="docker run -v \${HOME}/.azure:/root/.azure -it mcr.microsoft.com/azure-cli:$CLI_VERSION"
 
-COPY --from=builder /usr/local /usr/local
-COPY --from=tools   /usr/local /usr/local
+COPY --from=tools /usr/local /usr/local
+
+RUN --mount=from=build,source=/whl,target=/whl \
+    pip install /whl/* \
+ && find /usr/local -name __pycache__ | xargs -r rm -rf
 
 RUN scanelf --needed --nobanner --recursive /usr/local \
     | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
