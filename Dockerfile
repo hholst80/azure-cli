@@ -79,14 +79,12 @@ LABEL maintainer="Microsoft" \
 COPY --from=builder /usr/local /usr/local
 COPY --from=tools   /usr/local /usr/local
 
-RUN runDeps="$( \
-    scanelf --needed --nobanner --recursive /usr/local \
-        | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-        | sort -u \
-        | xargs -r apk info --installed \
-        | sort -u \
-    )" \
- && apk add --virtual .rundeps $runDeps \
+RUN scanelf --needed --nobanner --recursive /usr/local \
+    | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+    | sort -u \
+    | xargs -r apk info --installed \
+    | sort -u \
+    | xargs -r apk add --virtual .rundeps \
  && ln -s /usr/local/bin/az.completion.sh /etc/profile.d/
 
 ENV AZ_INSTALLER=DOCKER
